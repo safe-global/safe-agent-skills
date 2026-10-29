@@ -37,6 +37,13 @@ messages.
 |---|---|
 | [read-safe-state](skills/read-safe-state.md) | Read owners, threshold, nonce, balances, history, the pending queue and the Safes of an owner. |
 | [decode-and-explain](skills/decode-and-explain.md) | Decode calldata, explain its effect and estimate `safeTxGas`. |
+| [register-delegate](skills/register-delegate.md) | Create a local delegate key and have an owner register it for one Safe. |
+| [propose-transaction](skills/propose-transaction.md) | Propose a transaction as the delegate; owners confirm and execute it in Safe{Wallet}. |
+
+[`.well-known/agent-skills/index.json`](.well-known/agent-skills/index.json) lists the skills in
+the [Agent Skills discovery](https://github.com/cloudflare/agent-skills-discovery-rfc) format
+(v0.2.0, the format of `https://agents.ramp.com/.well-known/agent-skills/index.json`). After you
+change a skill file, update its `digest` there; `npm test` checks it.
 
 ## Calling the API
 

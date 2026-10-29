@@ -1,15 +1,14 @@
 ---
 name: decode-and-explain
-description: >
-  Decode Safe transaction calldata into a method and parameters with the Safe Decoder Service,
-  explain the effect in plain words, and estimate safeTxGas. Read only. Says "unknown" when the
-  calldata cannot be decoded.
+description: Decode Safe transaction calldata into a method and parameters with the Safe Decoder Service, explain its effect in plain words, and estimate safeTxGas. Use it before a proposal and for any queued transaction. Read only; says "unknown" when calldata cannot be decoded.
 ---
 
 # Decode and explain
 
 This skill only reads. It cannot sign, propose, confirm, execute or broadcast a transaction.
 
+- Install first: clone https://github.com/safe-global/safe-agent-skills and run the commands
+  from its root (README). The scripts are not in this file.
 - Make every call through `scripts/safe-api.sh`. Export `SAFE_API_KEY` first. Exit codes are
   in the README.
 - For the Transaction Service, the chain slug (`sep`, `eth`, `gno`, see the README) is part of

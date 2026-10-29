@@ -1,14 +1,14 @@
 ---
 name: read-safe-state
-description: >
-  Read a Safe from the Safe Transaction Service: owners, threshold, nonce and version; native and
-  token balances; executed history; the pending queue; the Safes of an owner. Read only.
+description: Read a Safe from the Safe Transaction Service (owners, threshold, nonce, version, native and token balances, executed history, the pending queue, and the Safes of an owner). Use it before any proposal and to answer questions about a Safe. Read only.
 ---
 
 # Read Safe state
 
 This skill only reads. It cannot sign, propose, confirm, execute or broadcast a transaction.
 
+- Install first: clone https://github.com/safe-global/safe-agent-skills and run the commands
+  from its root (README). The scripts are not in this file.
 - Make every call through `scripts/safe-api.sh <chain> GET <path>`. The chain slug (`sep`,
   `eth`, `gno`, see the README) is part of the URL. There is no default chain.
 - Export `SAFE_API_KEY` first. The script prints the response body on stdout and the status on
