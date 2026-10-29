@@ -7,7 +7,7 @@ import type { AddressInfo } from 'node:net';
 import { hashTypedData, recoverTypedDataAddress } from 'viem';
 import type { Hex } from 'viem';
 import {
-  checkDelegateSignature, deadlineOf, delegateTypedData, totpAt,
+  checkDelegateSignature, deadlineOf, delegateTypedData, normaliseV, totpAt,
 } from '../scripts/sign-delegate.ts';
 
 // Vectors from cast: keccak/abi-encode for the digest, `cast wallet sign --data` by anvil
@@ -41,12 +41,20 @@ test('a signature is valid in its hour and the next one, then expires', async ()
     assert.deepEqual(await check(now), { status: 'valid', deadline: START + 7200 }, at);
   }
   assert.deepEqual(await check(START + 7200), { status: 'expired', deadline: START + 7200 });
-  assert.equal((await check(START - 1)).status, 'mismatch', 'a signature for a later hour');
+  const future = { status: 'future', deadline: START + 7200 };
+  assert.deepEqual(await check(START - 1), future, 'a signature for the next hour');
+  assert.equal((await check(START - 3601)).status, 'mismatch', 'two hours ahead');
 });
 
 test('a signature by another key or for another chain does not match', async () => {
   assert.equal((await check(START, DELEGATE)).status, 'mismatch');
   assert.equal((await check(START, OWNER, 1)).status, 'mismatch');
+});
+
+test('a signature with v = 0 or 1 gets v = 27 or 28, and 27 or 28 stays', () => {
+  const rs = SIGNATURE.slice(0, -2);
+  const pairs = [['00', '1b'], ['01', '1c'], ['1b', '1b'], ['1c', '1c']];
+  for (const [v, want] of pairs) assert.equal(normaliseV(`${rs}${v}` as Hex), `${rs}${want}`, v);
 });
 
 test('api() starts each safe-api.sh run at least 200 ms after the previous one', async () => {
@@ -60,7 +68,7 @@ test('api() starts each safe-api.sh run at least 200 ms after the previous one',
   const { port } = server.address() as AddressInfo;
   // api() blocks its process (spawnSync), so it runs in a child while this process serves.
   const module = new URL('../scripts/sign-delegate.ts', import.meta.url).href;
-  const code = `import { api } from '${module}';\n` +
+  const code = `import { api } from ${JSON.stringify(module)};\n` +
     "for (let i = 0; i < 3; i++) api('local', 'GET', '/api/v1/about/');";
   const env = { PATH: process.env.PATH ?? '', SAFE_TX_SERVICE_URL: `http://127.0.0.1:${port}` };
   const child = spawn(process.execPath, ['--input-type=module', '-e', code], { env });

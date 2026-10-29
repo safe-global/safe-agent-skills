@@ -21,14 +21,14 @@
       "type": "skill-md",
       "description": "Register a local delegate key for one Safe, so that an agent can propose transactions to that Safe. An owner signs once; the registration expires after 7 days by default, and renewal needs the owner again. The delegate can only propose; it cannot confirm, execute or change the Safe.",
       "url": "../../skills/register-delegate.md",
-      "digest": "sha256:5c5036061be1449e01022190b04e398a6ae8f677df74a7b0db7f5108b01f3714"
+      "digest": "sha256:fe31c04cedeacb582c5e4d147c1108034bd0bb0d8dc5c0d9af59351e0710e890"
     },
     {
       "name": "propose-transaction",
       "type": "skill-md",
       "description": "Propose a Safe transaction as a registered delegate. The proposal appears in the Safe{Wallet} queue with a one-line note; owners confirm and execute it there. Proposal only; the agent cannot sign as an owner, confirm, execute or broadcast.",
       "url": "../../skills/propose-transaction.md",
-      "digest": "sha256:41f4cd0f98c861736a2f43610ad6b0fe76952390dd0ddadbb9c7ddf8ce55bc4b"
+      "digest": "sha256:faaec4b5fb09861f202b7daa07f96a2607e6ceaed7834c6e4b2d40947a985a97"
     }
   ]
 }

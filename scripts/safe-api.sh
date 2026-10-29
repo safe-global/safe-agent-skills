@@ -6,6 +6,8 @@ readonly API='https://api.safe.global'
 readonly EX_USAGE=2 EX_QUOTA=3 EX_CLIENT=4 EX_SERVER=5
 readonly MAX_ATTEMPTS=3 MAX_RETRY_AFTER=30
 readonly TOKEN_RE='^[A-Za-z0-9._~+/=-]+$'
+readonly PATH_RE='^(/decoder)?/api/v[0-9]+/[^[:space:][:cntrl:]]*$'
+readonly DOT_SEGMENT_RE='/(\.|%2[eE]){1,2}/'
 
 note() { printf 'safe-api: %s\n' "$*" >&2; }
 die() { note "$*"; exit "$EX_USAGE"; }
@@ -44,7 +46,10 @@ command -v curl >/dev/null || die "curl is required"
 command -v jq >/dev/null || die "jq is required"
 [[ $chain =~ ^[a-z0-9_-]+$ ]] || die "invalid chain slug: $chain"
 case $method in GET | POST | PUT | PATCH | DELETE) ;; *) die "invalid method: $method" ;; esac
-[[ $path =~ ^(/decoder)?/api/v[0-9]+/[^[:space:]]*$ ]] || die "invalid path: $path"
+[[ $path =~ $PATH_RE ]] || die "invalid path: /api/vN/... with no spaces or control characters"
+if [[ "${path%%[?#]*}/" =~ $DOT_SEGMENT_RE ]]; then
+  die "invalid path: a . or .. segment (also %2e) would send the request to another endpoint"
+fi
 [ "$method" != GET ] || [ -z "$body" ] || die "GET takes no body"
 if [ "$each" = 1 ]; then
   case $path in *'{safe}'*) ;; *) die "--each needs {safe} in the path" ;; esac
@@ -56,7 +61,8 @@ fi
 key=""
 if [ -n "${SAFE_TX_SERVICE_URL:-}" ]; then
   [[ $path != /decoder/* ]] || die "The decoder is hosted only: unset SAFE_TX_SERVICE_URL."
-  [[ $SAFE_TX_SERVICE_URL =~ ^https?:// ]] || die "SAFE_TX_SERVICE_URL must start with http(s)://"
+  [[ $SAFE_TX_SERVICE_URL =~ ^https?://[^[:space:][:cntrl:]]+$ ]] ||
+    die "SAFE_TX_SERVICE_URL must be an http(s):// URL with no spaces or control characters"
   base=${SAFE_TX_SERVICE_URL%/}
   [ -z "${SAFE_API_KEY:-}" ] || note "SAFE_TX_SERVICE_URL is set: SAFE_API_KEY is not sent."
 else
@@ -81,7 +87,7 @@ if [ -n "$body" ]; then
 fi
 
 header() {
-  awk -v k="$1" '{ sub(/\r$/, ""); i = index($0, ":")
+  awk -v k="$1" 'BEGIN { k = tolower(k) } { sub(/\r$/, ""); i = index($0, ":")
     if (i && tolower(substr($0, 1, i - 1)) == k) { v = substr($0, i + 1); sub(/^[ \t]+/, "", v) } }
     END { print v }' "$tmp/headers"
 }
@@ -118,7 +124,7 @@ send() {
 }
 
 retryable() {
-  if [ "$curl_rc" != 0 ]; then [ "$method" = GET ]; return; fi
+  if [ "$curl_rc" != 0 ]; then [ "$method" = GET ] && [ "$curl_rc" != 3 ]; return; fi
   case $status in
     429) return 0 ;;
     502 | 503 | 504) [ "$method" = GET ] ;;
@@ -144,26 +150,45 @@ request() {
   attempts=$attempt
 }
 
-quota_message() {
-  local ra reset
+limit_lines() {
+  local ra reset name value
+  for name in Retry-After X-RateLimit-Limit X-RateLimit-Remaining X-RateLimit-Reset; do
+    value=$(header "$name")
+    if [ -n "$value" ]; then note "$name: $value"; fi
+  done
   ra=$(retry_after) || ra=""
   reset=$(header x-ratelimit-reset)
-  note "429 Too Many Requests after $attempts attempt(s): the Safe API account quota is used up" \
-    "(requests per second or monthly calls). The response body is on stdout."
   if [ -n "$ra" ]; then note "Retry after ${ra}s ($(utc_in "$ra"))."; fi
   if [[ $reset =~ ^[0-9]+$ ]]; then
     note "The rate limit resets in ${reset}s ($(utc_in "$reset"))."
   fi
   if [ -z "$ra" ] && ! [[ $reset =~ ^[0-9]+$ ]]; then note "The response gives no reset time."; fi
+}
+
+quota_message() {
+  if [ -n "$key" ] && grep -q 'Monthly quota exceeded' "$tmp/body"; then
+    note "429 Too Many Requests after $attempts attempt(s): the monthly quota of the Safe API" \
+      "account is used up. The response body is on stdout."
+  else
+    note "429 Too Many Requests after $attempts attempt(s): rate limited." \
+      "The response body is on stdout."
+  fi
+  limit_lines
   note "Still works: Safe{Wallet}, where owners review, confirm and execute;" \
     "commands that make no API call. Do not retry in a loop."
 }
 
-outcome() {
-  if [ "$curl_rc" != 0 ]; then
-    note "$chain $method $1 -> network error after $attempts attempt(s):" "$(cat "$tmp/err")"
-    return "$EX_SERVER"
+transport_failure() {
+  if [ "$curl_rc" = 3 ]; then
+    note "$chain $method $1 -> curl rejected the URL; nothing was sent:" "$(cat "$tmp/err")"
+    return "$EX_USAGE"
   fi
+  note "$chain $method $1 -> network error after $attempts attempt(s):" "$(cat "$tmp/err")"
+  return "$EX_SERVER"
+}
+
+outcome() {
+  if [ "$curl_rc" != 0 ]; then transport_failure "$1"; return; fi
   local left limit
   left=$(header x-ratelimit-remaining)
   limit=$(header x-ratelimit-limit)

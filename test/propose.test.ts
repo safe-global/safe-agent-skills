@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  buildOrigin, explainRefusal, nextNonce, renewalNotice, safeTxHash,
+  buildOrigin, delegateStatus, explainRefusal, nextNonce, safeTxHash, wantedNonce,
 } from '../scripts/propose.ts';
 import type { DelegateRow, SafeTx } from '../scripts/propose.ts';
 import type { Hex } from 'viem';
@@ -31,10 +31,24 @@ test('a Safe before 1.3.0 hashes without the chain ID (cast vector)', () => {
   assert.equal(safeTxHash(TX, SAFE, 11155111, '1.1.1'), cast);
 });
 
+test('a Safe version that does not parse gets no hash', () => {
+  for (const version of ['unknown', '1.3', 'v1.3.0', '', null]) {
+    assert.throws(() => safeTxHash(TX, SAFE, 11155111, version), /unknown Safe version/);
+  }
+});
+
 test('the next nonce follows the pending queue', () => {
   assert.equal(nextNonce(10, null), 10);
   assert.equal(nextNonce(10, 12), 13);
   assert.equal(nextNonce(10, 8), 10);
+});
+
+test('--nonce is a whole number from the Safe nonce up, with no loss of precision', () => {
+  assert.equal(wantedNonce('5', 5), 5);
+  assert.equal(wantedNonce('9007199254740991', 5), 9007199254740991);
+  for (const bad of ['4', '0x10', '-1', '1.5', '9007199254740992', '99999999999999999999']) {
+    assert.throws(() => wantedNonce(bad, 5), /whole number from 5/, bad);
+  }
 });
 
 test('origin is JSON of at most 200 characters, and an empty note is refused', () => {
@@ -49,22 +63,26 @@ test('origin is JSON of at most 200 characters, and an empty note is refused', (
 });
 
 test('a refusal names its cause', () => {
-  const kind = (exit: number, body: unknown, rows: DelegateRow[]) =>
-    explainRefusal(exit, body, rows, SAFE, NOW).kind;
-  assert.equal(kind(3, { detail: 'Monthly quota exceeded.' }, []), 'quota');
-  assert.equal(kind(4, { nonFieldErrors: ['Tx with nonce=1 already executed'] }, []), 'rejected');
-  assert.equal(kind(4, NOT_DELEGATE, []), 'not-registered');
-  assert.equal(kind(4, NOT_DELEGATE, [row('0x0000000000000000000000000000000000000001', null)]),
+  const kind = (body: unknown, rows: DelegateRow[]) => explainRefusal(body, rows, SAFE, NOW).kind;
+  assert.equal(kind({ nonFieldErrors: ['Tx with nonce=1 already executed'] }, []), 'rejected');
+  assert.equal(kind(NOT_DELEGATE, []), 'not-registered');
+  assert.equal(kind(NOT_DELEGATE, [row('0x0000000000000000000000000000000000000001', null)]),
     'other-safe');
-  assert.equal(kind(4, NOT_DELEGATE, [row(SAFE.toLowerCase(), '2026-10-29T11:59:00Z')]), 'expired');
-  assert.equal(kind(4, NOT_DELEGATE, [row(SAFE, '2026-11-05T00:00:00Z')]), 'delegator-not-owner');
-  assert.equal(kind(4, NOT_DELEGATE, [row(null, null)]), 'delegator-not-owner');
+  assert.equal(kind(NOT_DELEGATE, [row(SAFE.toLowerCase(), '2026-10-29T11:59:00Z')]), 'expired');
+  assert.equal(kind(NOT_DELEGATE, [row(SAFE, '2026-11-05T00:00:00Z')]), 'delegator-not-owner');
+  assert.equal(kind(NOT_DELEGATE, [row(null, null)]), 'delegator-not-owner');
+  const never = explainRefusal(NOT_DELEGATE, [row(null, null)], SAFE, NOW).message;
+  assert.match(never, /is not an owner of/);
+  assert.doesNotMatch(never, /no longer/);
 });
 
-test('a renewal notice appears only in the last 24 hours before expiry', () => {
-  assert.match(renewalNotice(row(SAFE, '2026-10-30T11:00:00Z'), NOW) ?? '', /expires at/);
-  assert.equal(renewalNotice(row(SAFE, '2026-10-30T13:00:00Z'), NOW), null);
-  assert.equal(renewalNotice(row(SAFE, '2026-10-29T11:00:00Z'), NOW), null);
-  assert.equal(renewalNotice(row(SAFE, null), NOW), null);
-  assert.equal(renewalNotice(undefined, NOW), null);
+test('the delegate status comes from the longest registration for this Safe', () => {
+  const kind = (...rows: DelegateRow[]) => delegateStatus(rows, NOW).kind;
+  assert.equal(kind(), 'not-registered');
+  assert.equal(kind(row(SAFE, '2026-10-29T11:00:00Z')), 'expired');
+  assert.equal(kind(row(SAFE, '2026-10-30T11:00:00Z')), 'expiring');
+  assert.equal(kind(row(SAFE, '2026-10-30T13:00:00Z')), 'registered');
+  assert.equal(kind(row(SAFE, null)), 'registered');
+  assert.equal(kind(row(SAFE, '2026-10-29T11:00:00Z'), row(SAFE, '2026-11-05T00:00:00Z')),
+    'registered');
 });

@@ -4,7 +4,7 @@ import { getAddress, hashTypedData, zeroAddress } from 'viem';
 import type { Address, Hex } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import type { PrivateKeyAccount } from 'viem/accounts';
-import { api, chainIdOf } from './sign-delegate.ts';
+import { addressArg, api, chainIdOf, isEntry } from './sign-delegate.ts';
 
 const NAME = 'safe-agent-skill/1.0';
 const URL_ = 'https://github.com/safe-global/safe-agent-skills';
@@ -16,10 +16,18 @@ const USAGE = `usage: propose.ts --chain <slug> --safe <address> --to <address> 
 export type SafeTx = { to: Address; value: bigint; data: Hex; operation: 0 | 1; nonce: bigint };
 export type DelegateRow = { safe: string | null; delegator: string; expiryDate: string | null };
 export type Refusal = { kind: string; message: string };
+export type DelegateStatus = { kind: 'registered' | 'expiring' | 'expired' | 'not-registered';
+  message: string };
+
+const VERSION_RE = /^(\d+)\.(\d+)\.\d+(\+[0-9A-Za-z.]+)?$/;
 
 /** EIP-712 SafeTx; the domain has chainId from Safe 1.3.0, and baseGas was dataGas before 1.0.0. */
-export function safeTxHash(tx: SafeTx, safe: Address, chainId: number, version: string): Hex {
-  const [major, minor] = version.split(/[.+]/).map(Number);
+export function safeTxHash(
+  tx: SafeTx, safe: Address, chainId: number, version: string | null,
+): Hex {
+  const parts = VERSION_RE.exec(version ?? '');
+  if (!parts) throw new Error(`unknown Safe version ${JSON.stringify(version)}: no hash computed`);
+  const [major, minor] = [Number(parts[1]), Number(parts[2])];
   const gasField = major >= 1 ? 'baseGas' : 'dataGas';
   const withChainId = major > 1 || (major === 1 && minor >= 3);
   const types = {
@@ -40,6 +48,14 @@ export function safeTxHash(tx: SafeTx, safe: Address, chainId: number, version: 
 export const nextNonce = (safeNonce: number, highestPending: number | null) =>
   Math.max(safeNonce, highestPending === null ? 0 : highestPending + 1);
 
+export function wantedNonce(wanted: string, safeNonce: number): number {
+  const nonce = Number(wanted);
+  if (!/^\d+$/.test(wanted) || !Number.isSafeInteger(nonce) || nonce < safeNonce) {
+    throw new Error(`--nonce must be a whole number from ${safeNonce} to 2^53 - 1`);
+  }
+  return nonce;
+}
+
 /** The origin JSON that Safe{Wallet} shows; the service stores at most 200 characters. */
 export function buildOrigin(note: string): string {
   const chars = Array.from(note.replace(/\s+/g, ' ').trim());
@@ -50,19 +66,36 @@ export function buildOrigin(note: string): string {
   return origin(chars.slice(0, n).join('') + (n < chars.length ? '…' : ''));
 }
 
-export function renewalNotice(row: DelegateRow | undefined, now: number): string | null {
-  const expiry = row?.expiryDate ? Date.parse(row.expiryDate) : NaN;
-  if (!(expiry > now && expiry - now < DAY_MS)) return null;
-  return `The delegate registration expires at ${row?.expiryDate}. Renewal needs the owner to ` +
-    'sign again (skills/register-delegate.md).';
+const expiryOf = (row: DelegateRow) => (row.expiryDate ? Date.parse(row.expiryDate) : Infinity);
+
+/** The status of the registration for this Safe that lasts longest. */
+export function delegateStatus(rows: DelegateRow[], now: number): DelegateStatus {
+  const register = 'An owner must register it (skills/register-delegate.md).';
+  const row = [...rows].sort((a, b) => expiryOf(b) - expiryOf(a))[0];
+  if (!row) {
+    const message = `The delegate is not registered for this Safe: the service will refuse the ` +
+      `proposal. ${register}`;
+    return { kind: 'not-registered', message };
+  }
+  const expiry = expiryOf(row);
+  if (expiry <= now) {
+    const message = `The delegate registration expired at ${row.expiryDate}. ${register}`;
+    return { kind: 'expired', message };
+  }
+  if (expiry - now < DAY_MS) {
+    const message = `The delegate registration expires at ${row.expiryDate}. Renewal needs the ` +
+      'owner to sign again (skills/register-delegate.md).';
+    return { kind: 'expiring', message };
+  }
+  const until = row.expiryDate ? `until ${row.expiryDate}` : 'with no expiry';
+  return { kind: 'registered', message: `The delegate is registered for this Safe ${until}.` };
 }
 
-/** Explains a refused proposal; rows are all registrations of the delegate. */
+/** Explains a 4xx refusal of a proposal; rows are all registrations of the delegate. */
 export function explainRefusal(
-  exit: number, body: unknown, rows: DelegateRow[], safe: Address, now: number,
+  body: unknown, rows: DelegateRow[], safe: Address, now: number,
 ): Refusal {
   const again = 'An owner must register it again: skills/register-delegate.md.';
-  if (exit === 3) return { kind: 'quota', message: 'The API quota is used up (see above).' };
   const text = JSON.stringify(body);
   if (!text.includes('is not an owner or delegate')) {
     return { kind: 'rejected', message: `The service refused the proposal: ${text}` };
@@ -70,7 +103,7 @@ export function explainRefusal(
   const own = rows.filter((r) => r.safe === null || r.safe.toLowerCase() === safe.toLowerCase());
   const live = own.find((r) => r.expiryDate === null || Date.parse(r.expiryDate) > now);
   if (live) {
-    const message = `The delegator ${live.delegator} is no longer an owner of ${safe}. ${again}`;
+    const message = `The delegator ${live.delegator} is not an owner of ${safe}. ${again}`;
     return { kind: 'delegator-not-owner', message };
   }
   if (own.length > 0) {
@@ -111,10 +144,7 @@ function read<T>(chain: string, path: string): T {
 }
 
 function pickNonce(chain: string, safe: Address, safeNonce: number, wanted?: string): number {
-  if (wanted !== undefined) {
-    if (!/^\d+$/.test(wanted) || Number(wanted) < safeNonce) die(`--nonce must be >= ${safeNonce}`);
-    return Number(wanted);
-  }
+  if (wanted !== undefined) return wantedNonce(wanted, safeNonce);
   const queue = read<{ results: { nonce: string }[] }>(chain, `/api/v2/safes/${safe}/` +
     `multisig-transactions/?executed=false&nonce__gte=${safeNonce}&ordering=-nonce&limit=1`);
   return nextNonce(safeNonce, queue.results.length ? Number(queue.results[0].nonce) : null);
@@ -132,7 +162,7 @@ function parse(argv: string[]) {
   if (!o.chain || !o.safe || !o.to) die(USAGE);
   if (!/^\d+$/.test(o.value)) die('--value is a whole number of wei');
   if (!/^0x([0-9a-fA-F]{2})*$/.test(o.data)) die('--data is 0x-prefixed hex bytes');
-  return { ...o, chain: o.chain, safe: getAddress(o.safe), to: getAddress(o.to) };
+  return { ...o, chain: o.chain, safe: addressArg('safe', o.safe), to: addressArg('to', o.to) };
 }
 
 type Options = ReturnType<typeof parse>;
@@ -145,27 +175,72 @@ async function build(o: Options, delegate: PrivateKeyAccount, info: SafeInfo, or
   const nonce = pickNonce(o.chain, o.safe, Number(info.nonce), o.nonce);
   const tx: SafeTx = { to: o.to, value: BigInt(o.value), data: o.data as Hex,
     operation: o.delegatecall ? 1 : 0, nonce: BigInt(nonce) };
-  const hash = safeTxHash(tx, o.safe, chainIdOf(o.chain), info.version ?? '');
+  const hash = safeTxHash(tx, o.safe, chainIdOf(o.chain), info.version);
   const payload = { to: tx.to, value: o.value, data: tx.data, operation: tx.operation, safeTxGas: 0,
     baseGas: 0, gasPrice: 0, gasToken: zeroAddress, refundReceiver: zeroAddress, nonce,
     contractTransactionHash: hash, sender: delegate.address,
     signature: await delegate.sign({ hash }), origin };
-  return { hash, payload };
+  const path = `/api/v2/safes/${o.safe}/multisig-transactions/`;
+  return { hash, request: { method: 'POST', path, body: payload } };
 }
 
-function send(o: Options, delegate: Address, hash: Hex, payload: object) {
-  const posted = api(o.chain, 'POST', `/api/v2/safes/${o.safe}/multisig-transactions/`, payload);
-  if (posted.exit !== 0) {
-    const all = posted.exit === 4 ? read<{ results: DelegateRow[] }>(o.chain,
-      `/api/v2/delegates/?delegate=${delegate}`).results : [];
-    die(explainRefusal(posted.exit, posted.body, all, o.safe, Date.now()).message, posted.exit);
+type Request = { method: string; path: string; body: object };
+
+const checkLines = (chain: string, hash: Hex) => `  safeTxHash: ${hash}\n` +
+  `  Check: scripts/safe-api.sh ${chain} GET /api/v2/multisig-transactions/${hash}/`;
+
+function unknownOutcome(chain: string, hash: Hex): never {
+  die('the outcome is unknown: the service may have stored the proposal.\n' +
+    `${checkLines(chain, hash)}\n  200: it is proposed. 404: it is not; run propose.ts again.`, 5);
+}
+
+/** A 4xx stays the outcome; the delegate lookup only names its cause. */
+function refused(o: Options, delegate: Address, body: unknown): never {
+  const lookup = api(o.chain, 'GET', `/api/v2/delegates/?delegate=${delegate}`);
+  const found = lookup.body;
+  const listed = lookup.exit === 0 && typeof found === 'object' && found !== null &&
+    'results' in found && Array.isArray(found.results);
+  if (!listed) {
+    die(`The service refused the proposal: ${JSON.stringify(body)}\n` +
+      '  The delegate lookup failed, so the cause is not classified.', 4);
   }
-  const t = read<Record<string, unknown>>(o.chain, `/api/v2/multisig-transactions/${hash}/`);
+  die(explainRefusal(body, found.results as DelegateRow[], o.safe, Date.now()).message, 4);
+}
+
+/** After a stored proposal every read-back failure exits 5, except a 429 (3). */
+function readBack(chain: string, hash: Hex): Record<string, unknown> {
+  const back = api(chain, 'GET', `/api/v2/multisig-transactions/${hash}/`);
+  if (back.exit === 0) return back.body as Record<string, unknown>;
+  die('proposed: the service stored the proposal, but the read-back failed. Do not propose ' +
+    `it again.\n${checkLines(chain, hash)}`, back.exit === 3 ? 3 : 5);
+}
+
+/** Separate runs do not coordinate, so two proposals can share a nonce. */
+function warnSameNonce(chain: string, safe: Address, nonce: unknown) {
+  const r = api(chain, 'GET', `/api/v2/safes/${safe}/multisig-transactions/?nonce=${nonce}`);
+  const body = r.body;
+  const counted = typeof body === 'object' && body !== null && 'count' in body;
+  const count = counted ? Number(body.count) : 0;
+  if (r.exit !== 0) {
+    process.stderr.write(`propose: could not list the proposals with nonce ${nonce}.\n`);
+  } else if (count > 1) {
+    process.stderr.write(`propose: WARNING ${count} proposals have nonce ${nonce}; only one ` +
+      'can execute. Tell the owners which one to confirm in Safe{Wallet}.\n');
+  }
+}
+
+function send(o: Options, delegate: Address, hash: Hex, request: Request) {
+  const posted = api(o.chain, request.method, request.path, request.body);
+  if (posted.exit === 5) unknownOutcome(o.chain, hash);
+  if (posted.exit === 4) refused(o, delegate, posted.body);
+  if (posted.exit !== 0) process.exit(posted.exit);
+  const t = readBack(o.chain, hash);
   const { safeTxHash: h, nonce, proposer, proposedByDelegate, origin, confirmationsRequired } = t;
   const confirmations = (t.confirmations as unknown[] | null)?.length ?? 0;
   console.log(JSON.stringify({ safeTxHash: h, nonce, proposer, proposedByDelegate, origin,
     confirmations, confirmationsRequired }));
   process.stderr.write('propose: proposed. Owners confirm and execute it in Safe{Wallet}.\n');
+  warnSameNonce(o.chain, o.safe, nonce);
 }
 
 async function main(argv: string[]) {
@@ -177,16 +252,17 @@ async function main(argv: string[]) {
     die('this key is an owner of the Safe. propose.ts signs only as a delegate; owners use ' +
       'Safe{Wallet}.');
   }
-  if (!info.version) die('the service does not know the Safe version: no hash can be computed');
-  const { hash, payload } = await build(o, delegate, info, origin);
+  const { hash, request } = await build(o, delegate, info, origin);
   const mine = read<{ results: DelegateRow[] }>(o.chain,
     `/api/v2/delegates/?delegate=${delegate.address}&safe=${o.safe}`);
-  const notice = renewalNotice(mine.results[0], Date.now());
-  if (notice) process.stderr.write(`propose: ${notice}\n`);
-  if (o['dry-run']) return console.log(JSON.stringify({ safeTxHash: hash, payload }, null, 2));
-  send(o, delegate.address, hash, payload);
+  const status = delegateStatus(mine.results, Date.now());
+  if (o['dry-run'] || status.kind === 'expiring') {
+    process.stderr.write(`propose: ${status.message}\n`);
+  }
+  if (o['dry-run']) return console.log(JSON.stringify({ safeTxHash: hash, request }, null, 2));
+  send(o, delegate.address, hash, request);
 }
 
-if (import.meta.main) {
+if (isEntry(import.meta.url)) {
   await main(process.argv.slice(2)).catch((error: Error) => die(error.message));
 }

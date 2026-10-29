@@ -17,6 +17,8 @@ spam proposals; no owner has to approve them.
   gives the delegate every Safe of the owner, with no ownership check.
 - The owner must be an owner account with a private key (EOA). A contract owner cannot sign
   here.
+- Give addresses with the EIP-55 checksum or in all lowercase. The script refuses a mixed-case
+  address with a wrong checksum (exit code 2): it is often a typo.
 
 The examples use `SAFE=0x…`, `OWNER=0x…` (an owner of the Safe) and the chain `sep`.
 
@@ -26,8 +28,9 @@ The examples use `SAFE=0x…`, `OWNER=0x…` (an owner of the Safe) and the chai
 node scripts/sign-delegate.ts new-key --out ~/.safe-agent/delegate.key
 ```
 
-The script writes the key with file mode 0600, never replaces a file, and prints only the
-address. Set `DELEGATE` to that address. Never print, paste or commit the key.
+The script creates a missing parent directory with mode 0700, writes the key with file mode
+0600, never replaces a file, and prints only the address. Set `DELEGATE` to that address. Never
+print, paste or commit the key.
 
 ## 2. Get the owner's signature and register
 
@@ -41,7 +44,9 @@ node scripts/sign-delegate.ts submit --chain sep --safe "$SAFE" --delegate "$DEL
 
 Give `delegate.json` to the owner. The owner signs it with `eth_signTypedData_v4` and gives you
 the signature. The service accepts the signature until the end of the next whole UTC hour after
-the hour in the typed data: `typed-data` prints that deadline in UTC on stderr.
+the hour in the typed data: `typed-data` prints that deadline in UTC on stderr. Some wallets
+return the signature with v = 0 or 1; `submit` changes it to 27 or 28 before the check and the
+request, because the service reads only those values as an owner signature.
 
 For development, with a local owner key in an environment variable:
 
@@ -54,7 +59,11 @@ Never pass a private key as an argument: `--owner-key-env` takes the name of the
 
 Before it sends anything, `submit` checks that the signature recovers to the owner for the
 current or the previous UTC hour. An older signature gets "the signature expired at …" and no
-request. Then `submit` prints the delegate row with its `expiryDate`.
+request. A signature for the next UTC hour means that the clocks differ: check the system clock,
+and sign again after the hour starts. Then `submit` prints the delegate row with its `expiryDate`.
+
+Only an HTTP 4xx is a refusal. After a server or network error (exit code 5) the outcome is
+unknown: `submit` prints the command that reads the row back. Run it before you try again.
 
 Options: `--label <text>` (at most 50 characters, default `safe-agent-skill`) and
 `--expires-in <seconds>` (default 604800, which is 7 days).
@@ -75,4 +84,4 @@ prints a notice when less than 24 hours remain.
 |---|---|
 | `Safe=… does not exist or it's still not indexed` | Wrong chain, or the Safe is not indexed yet. |
 | `Provided delegator=… is not an owner of Safe=…` | The signer is not a current owner. |
-| `Signature does not match provided delegator=…` | Wrong owner, wrong chain, or an old signature. |
+| `Signature does not match provided delegator=…` | `submit` already checked the owner, the chain and the hour, so the clocks differ. Check the system clock, and sign again after the hour starts. |

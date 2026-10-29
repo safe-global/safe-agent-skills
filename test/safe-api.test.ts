@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { once } from 'node:events';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import type { IncomingHttpHeaders, IncomingMessage, ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -11,8 +11,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { TLSSocket } from 'node:tls';
+import { fileURLToPath } from 'node:url';
 
-const SCRIPT = new URL('../scripts/safe-api.sh', import.meta.url).pathname;
+const SCRIPT = fileURLToPath(new URL('../scripts/safe-api.sh', import.meta.url));
 const KEY = `test-key-${randomUUID()}`;
 const UA = 'safe-agent-skill/1.0 (+https://github.com/safe-global/safe-agent-skills)';
 const SAFES = ['0x' + '1'.repeat(40), '0x' + '2'.repeat(40), '0x' + '3'.repeat(40)];
@@ -64,7 +65,10 @@ before(async () => {
   await once(server, 'listening');
   origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 });
-after(() => server.close());
+after(() => {
+  server.close();
+  rmSync(DIR, { recursive: true, force: true });
+});
 beforeEach(() => {
   replies = [];
   seen = [];
@@ -128,6 +132,35 @@ test('a hosted target without a key fails with an actionable message', async () 
   assert.equal(seen.length, 0);
 });
 
+test('a malformed SAFE_API_KEY is refused before any request', async () => {
+  const r = await run(['sep', 'GET', '/api/v1/about/'],
+    { ...hosted(), SAFE_API_KEY: 'test-key-not-real\r\nX-Injected: 1' });
+  assert.equal(r.code, 2);
+  assert.match(r.stderr, /SAFE_API_KEY is not a valid bearer token/);
+  assert.equal(seen.length, 0);
+});
+
+test('a dot segment, a control character or a bad base URL is refused before any request',
+  async () => {
+    const paths = ['/api/v1/../../x/', '/api/v1/%2E%2e/x/', '/api/v1/./about/',
+      '/api/v1/about/..?a=1', '/api/v1/about/\x01'];
+    for (const path of paths) {
+      const r = await run(['sep', 'GET', path]);
+      assert.equal(r.code, 2, path);
+      assert.match(r.stderr, /invalid path/, path);
+    }
+    const urls: [string, RegExp][] = [[`${origin}/a b/`, /SAFE_TX_SERVICE_URL must be/],
+      [`${origin}/a\x7f/`, /SAFE_TX_SERVICE_URL must be/], ['http://[', /curl rejected the URL/]];
+    for (const [url, message] of urls) {
+      const r = await run(['gno', 'GET', '/api/v1/about/'], { SAFE_TX_SERVICE_URL: url });
+      assert.equal(r.code, 2, url);
+      assert.match(r.stderr, message);
+      assert.doesNotMatch(r.stderr, /retry in/);
+    }
+    assert.equal(seen.length, 0);
+    assert.equal((await run(['sep', 'GET', '/api/v1/about/?ordering=a..b'])).code, 0);
+  });
+
 test('SAFE_TX_SERVICE_URL sets the base URL and makes the key optional', async () => {
   assert.equal((await run(['gno', 'GET', '/api/v1/about/'], local())).code, 0);
   assert.equal(seen[0].url, '/tx-base/api/v1/about/');
@@ -167,10 +200,28 @@ test('a persistent 429 stops after 3 attempts with the quota message', async () 
   assert.equal(r.code, 3);
   assert.equal(seen.length, 3);
   assert.equal(r.stdout, quota.body);
-  assert.match(r.stderr, /429 Too Many Requests after 3 attempt\(s\): the Safe API account quota/);
+  assert.match(r.stderr, /after 3 attempt\(s\): the monthly quota of the Safe API account/);
   assert.match(r.stderr, /rate limit resets in 3600s \(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ\)/);
   assert.match(r.stderr, /Still works: Safe\{Wallet\}/);
 });
+
+test('a 429 without the monthly-quota body says rate limited and prints the limit headers',
+  async () => {
+    const headers = { 'retry-after': '120', 'x-ratelimit-limit': '5000',
+      'x-ratelimit-remaining': '0', 'x-ratelimit-reset': '1200' };
+    replies = [{ status: 429, headers, body: '{"message":"API rate limit exceeded"}' }];
+    const hostedRun = await run(['sep', 'GET', '/api/v1/about/']);
+    replies = [{ status: 429, headers, body: '{"detail":"Monthly quota exceeded."}' }];
+    const selfHosted = await run(['gno', 'GET', '/api/v1/about/'], local());
+    const lines = ['Retry-After: 120', 'X-RateLimit-Limit: 5000', 'X-RateLimit-Remaining: 0',
+      'X-RateLimit-Reset: 1200'];
+    for (const r of [hostedRun, selfHosted]) {
+      assert.equal(r.code, 3);
+      assert.match(r.stderr, /after 1 attempt\(s\): rate limited/);
+      assert.doesNotMatch(r.stderr, /Safe API account/);
+      for (const line of lines) assert.ok(r.stderr.includes(`safe-api: ${line}\n`), line);
+    }
+  });
 
 test('a Retry-After longer than 30 s is reported, not waited for', async () => {
   replies = [{ status: 429, headers: { 'retry-after': '120' } }];

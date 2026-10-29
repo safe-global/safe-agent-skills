@@ -13,8 +13,8 @@ An agent reads Safe state, explains calldata and proposes transactions.
 
 ## Setup
 
-1. Install Node.js 24 or later (tested on Node 26), bash, curl and jq. The specs (`npm test`)
-   also need openssl.
+1. Install Node.js 24.0.0 or later (tested on 24.0.0 and 26.12.1), bash, curl and jq. The specs
+   (`npm test`) also need openssl.
 2. Run `npm ci` in this directory.
 3. Create an API key in the [Safe developer dashboard](https://developer.safe.global) and
    export it:
@@ -61,20 +61,23 @@ scripts/safe-api.sh sep GET '/api/v1/safes/{safe}/' --each 0xSafeA 0xSafeB
   `https://api.safe.global/decoder`. It serves all chains: the chain ID is in the request body.
   It has no self-hosted form here, so the script refuses it while `SAFE_TX_SERVICE_URL` is set.
 - The body is a JSON string, `@file`, or `-` for stdin.
+- The script refuses a path with spaces, control characters, or a `.` or `..` segment (also
+  `%2e`), and a `SAFE_TX_SERVICE_URL` with spaces or control characters. It sends nothing.
 - The response body goes to stdout. Statuses and explanations go to stderr.
 - `--each` replaces `{safe}` in the path and prints one JSON line per Safe:
   `{"safe": ..., "status": ..., "body": ...}`.
-- Requests are serial and never faster than 5 per second.
+- Within one process, requests are serial and never faster than 5 per second. Separate
+  processes do not share this pacing, and parallel `propose.ts` runs can pick the same nonce.
 - GET retries on 429, 502, 503, 504 and connection errors. Other methods retry only on 429.
   A request makes at most 3 attempts, with exponential backoff and jitter. The script waits for
-  `Retry-After` up to 30 seconds. A longer one ends the retries: a 429 then exits 3 with the
-  quota message, and a 502, 503 or 504 exits 5.
+  `Retry-After` up to 30 seconds. A longer one ends the retries: a 429 then exits 3, and a 502,
+  503 or 504 exits 5.
 
 | Exit code | Meaning |
 |---|---|
 | 0 | Success (HTTP 2xx) |
 | 2 | Usage or configuration error; no request was sent |
-| 3 | Quota: HTTP 429 after the last attempt |
+| 3 | HTTP 429 after the last attempt. The message names the monthly quota of the Safe API account only when the hosted API answers with the body `Monthly quota exceeded`. Otherwise it says "rate limited". Both print the `Retry-After` and `X-RateLimit-*` headers. |
 | 4 | Redirect (HTTP 3xx), for example a self-hosted service that wants a trailing slash, or other client error (HTTP 4xx) |
 | 5 | Server error (HTTP 5xx) or network error |
 
