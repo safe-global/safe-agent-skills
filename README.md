@@ -31,6 +31,13 @@ chain path (for example `http://127.0.0.1:8000`). The script then never sends `S
 because that URL can point at any host. The chain argument then names the chain only in
 messages.
 
+## Skills
+
+| Skill | Use it to |
+|---|---|
+| [read-safe-state](skills/read-safe-state.md) | Read owners, threshold, nonce, balances, history, the pending queue and the Safes of an owner. |
+| [decode-and-explain](skills/decode-and-explain.md) | Decode calldata, explain its effect and estimate `safeTxGas`. |
+
 ## Calling the API
 
 `scripts/safe-api.sh` is the single entry point for API calls:
@@ -43,6 +50,9 @@ scripts/safe-api.sh sep GET '/api/v1/safes/{safe}/' --each 0xSafeA 0xSafeB
 
 - The chain slug is part of the URL: `https://api.safe.global/tx-service/<chain>/api/...`.
   There is no default chain.
+- A path that starts with `/decoder/` goes to the Safe Decoder Service at
+  `https://api.safe.global/decoder`. It serves all chains: the chain ID is in the request body.
+  It has no self-hosted form here, so the script refuses it while `SAFE_TX_SERVICE_URL` is set.
 - The body is a JSON string, `@file`, or `-` for stdin.
 - The response body goes to stdout. Statuses and explanations go to stderr.
 - `--each` replaces `{safe}` in the path and prints one JSON line per Safe:
@@ -58,7 +68,7 @@ scripts/safe-api.sh sep GET '/api/v1/safes/{safe}/' --each 0xSafeA 0xSafeB
 | 0 | Success (HTTP 2xx) |
 | 2 | Usage or configuration error; no request was sent |
 | 3 | Quota: HTTP 429 after the last attempt |
-| 4 | Redirect (HTTP 3xx: the path lacks its trailing slash) or other client error (HTTP 4xx) |
+| 4 | Redirect (HTTP 3xx), for example a self-hosted service that wants a trailing slash, or other client error (HTTP 4xx) |
 | 5 | Server error (HTTP 5xx) or network error |
 
 With `--each`, the exit code is the code of the first failed Safe. A 429 stops the run.

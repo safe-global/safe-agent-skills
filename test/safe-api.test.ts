@@ -141,6 +141,15 @@ test('SAFE_TX_SERVICE_URL never receives SAFE_API_KEY', async () => {
   assert.match(r.stderr, /SAFE_API_KEY is not sent/);
 });
 
+test('/decoder paths go only to the hosted Safe Decoder Service', async () => {
+  const decode = ['sep', 'POST', '/decoder/api/v1/data-decoder', '{"data":"0x","chainId":1}'];
+  assert.equal((await run(decode)).code, 0);
+  assert.equal(seen[0].url, '/decoder/api/v1/data-decoder');
+  assert.equal(seen[0].headers.authorization, `Bearer ${KEY}`);
+  assert.equal((await run(decode, { ...local(), SAFE_API_KEY: KEY })).code, 2);
+  assert.equal(seen.length, 1);
+});
+
 test('429 with Retry-After is retried after the delay, then succeeds', async () => {
   replies = [{ status: 429, headers: { 'retry-after': '1' } }, { status: 200, body: '{"a":1}' }];
   const r = await run(['sep', 'GET', '/api/v1/about/']);

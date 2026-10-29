@@ -2,7 +2,7 @@
 set -euo pipefail
 
 readonly UA='safe-agent-skill/1.0 (+https://github.com/safe-global/safe-agent-skills)'
-readonly HOSTED='https://api.safe.global/tx-service'
+readonly API='https://api.safe.global'
 readonly EX_USAGE=2 EX_QUOTA=3 EX_CLIENT=4 EX_SERVER=5
 readonly MAX_ATTEMPTS=3 MAX_RETRY_AFTER=30
 readonly TOKEN_RE='^[A-Za-z0-9._~+/=-]+$'
@@ -14,7 +14,8 @@ usage() {
   cat >&2 <<'EOF'
 usage: safe-api.sh <chain> <METHOD> <path> [body] [--each <address>...]
   chain   chain slug, for example sep or eth (see README)
-  path    /api/v1/... or /api/v2/...; with --each, {safe} is replaced by each address
+  path    /api/v1/... or /api/v2/...; /decoder/api/v1/... for the Safe Decoder Service;
+          with --each, {safe} is replaced by each address
   body    JSON string, @file, or - for stdin
 EOF
   exit "$EX_USAGE"
@@ -43,7 +44,7 @@ command -v curl >/dev/null || die "curl is required"
 command -v jq >/dev/null || die "jq is required"
 [[ $chain =~ ^[a-z0-9_-]+$ ]] || die "invalid chain slug: $chain"
 case $method in GET | POST | PUT | PATCH | DELETE) ;; *) die "invalid method: $method" ;; esac
-[[ $path =~ ^/api/v[0-9]+/[^[:space:]]*$ ]] || die "path must start with /api/vN/: $path"
+[[ $path =~ ^(/decoder)?/api/v[0-9]+/[^[:space:]]*$ ]] || die "invalid path: $path"
 [ "$method" != GET ] || [ -z "$body" ] || die "GET takes no body"
 if [ "$each" = 1 ]; then
   case $path in *'{safe}'*) ;; *) die "--each needs {safe} in the path" ;; esac
@@ -54,6 +55,7 @@ fi
 
 key=""
 if [ -n "${SAFE_TX_SERVICE_URL:-}" ]; then
+  [[ $path != /decoder/* ]] || die "The decoder is hosted only: unset SAFE_TX_SERVICE_URL."
   [[ $SAFE_TX_SERVICE_URL =~ ^https?:// ]] || die "SAFE_TX_SERVICE_URL must start with http(s)://"
   base=${SAFE_TX_SERVICE_URL%/}
   [ -z "${SAFE_API_KEY:-}" ] || note "SAFE_TX_SERVICE_URL is set: SAFE_API_KEY is not sent."
@@ -61,7 +63,7 @@ else
   key=${SAFE_API_KEY:-}
   [ -n "$key" ] || missing_key
   [[ $key =~ $TOKEN_RE ]] || die "SAFE_API_KEY is not a valid bearer token"
-  base="$HOSTED/$chain"
+  case $path in /decoder/*) base=$API ;; *) base="$API/tx-service/$chain" ;; esac
 fi
 
 tmp=$(mktemp -d)
@@ -171,7 +173,7 @@ outcome() {
     429) quota_message; return "$EX_QUOTA" ;;
     3??) note "Redirected: add the trailing slash to the path."; return "$EX_CLIENT" ;;
     401 | 403) note "Check SAFE_API_KEY and the chain slug."; return "$EX_CLIENT" ;;
-    404) note "Not found: unknown address or chain slug."; return "$EX_CLIENT" ;;
+    404) note "Not found: unknown address, chain slug or selector."; return "$EX_CLIENT" ;;
     4??) note "Rejected: the body on stdout says why."; return "$EX_CLIENT" ;;
     *) return "$EX_SERVER" ;;
   esac
