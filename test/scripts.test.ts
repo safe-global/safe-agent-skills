@@ -261,19 +261,41 @@ test('a stored proposal whose read-back fails exits 5 (3 for a 429), with the ha
     }
   });
 
-test('a refusal stays exit 4 with the service body when the delegate lookup fails',
-  async () => {
-    const body = { nonFieldErrors: [`Sender=${DELEGATE} is not an owner or delegate.`] };
-    routes[`POST ${QUEUE}`] = { status: 422, body };
-    for (const status of [502, 429]) {
-      routes[`GET /api/v2/delegates/?delegate=${DELEGATE}`] = { status,
-        headers: { 'retry-after': '120' }, body: { detail: 'x' } };
-      const r = await run('propose.ts', PROPOSE, AS_DELEGATE);
-      assert.equal(r.code, 4, `lookup ${status}`);
-      assert.ok(r.stderr.includes(`The service refused the proposal: ${JSON.stringify(body)}`));
-      assert.match(r.stderr, /delegate lookup failed, so the cause is not classified/);
-    }
-  });
+test('a delegate that is not registered or expired stops before the POST', async () => {
+  const expired = { safe: SAFE, delegate: DELEGATE, delegator: OWNER.address,
+    expiryDate: new Date(Date.now() - DAY_MS).toISOString() };
+  const other = { ...expired, safe: getAddress(`0x${'6b'.repeat(20)}`), expiryDate: null };
+  const cases: [object[], RegExp][] = [[[], /not registered for this Safe/],
+    [[other], /not registered for this Safe/], [[expired], /registration expired at/]];
+  for (const [results, message] of cases) {
+    routes['GET /api/v2/delegates/'] = { status: 200, body: { results } };
+    seen = [];
+    const r = await run('propose.ts', PROPOSE, AS_DELEGATE);
+    assert.equal(r.code, 4, r.stderr);
+    assert.match(r.stderr, message);
+    assert.equal(posts().length, 0);
+    assert.deepEqual(seen.filter((s) => s.url.startsWith('/api/v2/delegates/')).map((s) => s.url),
+      [`/api/v2/delegates/?delegate=${DELEGATE}`]);
+  }
+});
+
+test('a registration for every Safe of an owner (safe null) can propose', async () => {
+  const row = { safe: null, delegate: DELEGATE, delegator: OWNER.address, expiryDate: null };
+  routes['GET /api/v2/delegates/'] = { status: 200, body: { results: [row] } };
+  routes['GET *'] = { status: 200, body: { safeTxHash: '0x01', nonce: 5, confirmations: [] } };
+  const r = await run('propose.ts', PROPOSE, AS_DELEGATE);
+  assert.equal(r.code, 0, r.stderr);
+  assert.equal(posts().length, 1);
+});
+
+test('a refusal of a registered delegate stays exit 4 and names the cause', async () => {
+  const body = { nonFieldErrors: [`Sender=${DELEGATE} is not an owner or delegate.`] };
+  routes[`POST ${QUEUE}`] = { status: 422, body };
+  const r = await run('propose.ts', PROPOSE, AS_DELEGATE);
+  assert.equal(r.code, 4);
+  assert.match(r.stderr, new RegExp(`The delegator ${OWNER.address} is not an owner of ${SAFE}`));
+  assert.equal(seen.filter((s) => s.url.startsWith('/api/v2/delegates/')).length, 1);
+});
 
 test('a proposal warns when another proposal has the same nonce', async () => {
   routes['GET *'] = { status: 200, body: { safeTxHash: '0x01', nonce: 5, confirmations: [] } };

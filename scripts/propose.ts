@@ -68,6 +68,10 @@ export function buildOrigin(note: string): string {
 
 const expiryOf = (row: DelegateRow) => (row.expiryDate ? Date.parse(row.expiryDate) : Infinity);
 
+/** The rows the service checks for this Safe: its own, and those for every Safe (safe null). */
+export const rowsForSafe = (rows: DelegateRow[], safe: Address) =>
+  rows.filter((r) => r.safe === null || r.safe.toLowerCase() === safe.toLowerCase());
+
 /** The status of the registration for this Safe that lasts longest. */
 export function delegateStatus(rows: DelegateRow[], now: number): DelegateStatus {
   const register = 'An owner must register it (skills/register-delegate.md).';
@@ -100,7 +104,7 @@ export function explainRefusal(
   if (!text.includes('is not an owner or delegate')) {
     return { kind: 'rejected', message: `The service refused the proposal: ${text}` };
   }
-  const own = rows.filter((r) => r.safe === null || r.safe.toLowerCase() === safe.toLowerCase());
+  const own = rowsForSafe(rows, safe);
   const live = own.find((r) => r.expiryDate === null || Date.parse(r.expiryDate) > now);
   if (live) {
     const message = `The delegator ${live.delegator} is not an owner of ${safe}. ${again}`;
@@ -194,17 +198,9 @@ function unknownOutcome(chain: string, hash: Hex): never {
     `${checkLines(chain, hash)}\n  200: it is proposed. 404: it is not; run propose.ts again.`, 5);
 }
 
-/** A 4xx stays the outcome; the delegate lookup only names its cause. */
-function refused(o: Options, delegate: Address, body: unknown): never {
-  const lookup = api(o.chain, 'GET', `/api/v2/delegates/?delegate=${delegate}`);
-  const found = lookup.body;
-  const listed = lookup.exit === 0 && typeof found === 'object' && found !== null &&
-    'results' in found && Array.isArray(found.results);
-  if (!listed) {
-    die(`The service refused the proposal: ${JSON.stringify(body)}\n` +
-      '  The delegate lookup failed, so the cause is not classified.', 4);
-  }
-  die(explainRefusal(body, found.results as DelegateRow[], o.safe, Date.now()).message, 4);
+/** A 4xx stays the outcome; the delegate rows read before the POST only name its cause. */
+function refused(safe: Address, rows: DelegateRow[], body: unknown): never {
+  die(explainRefusal(body, rows, safe, Date.now()).message, 4);
 }
 
 /** After a stored proposal every read-back failure exits 5, except a 429 (3). */
@@ -229,10 +225,10 @@ function warnSameNonce(chain: string, safe: Address, nonce: unknown) {
   }
 }
 
-function send(o: Options, delegate: Address, hash: Hex, request: Request) {
+function send(o: Options, rows: DelegateRow[], hash: Hex, request: Request) {
   const posted = api(o.chain, request.method, request.path, request.body);
   if (posted.exit === 5) unknownOutcome(o.chain, hash);
-  if (posted.exit === 4) refused(o, delegate, posted.body);
+  if (posted.exit === 4) refused(o.safe, rows, posted.body);
   if (posted.exit !== 0) process.exit(posted.exit);
   const t = readBack(o.chain, hash);
   const { safeTxHash: h, nonce, proposer, proposedByDelegate, origin, confirmationsRequired } = t;
@@ -253,14 +249,15 @@ async function main(argv: string[]) {
       'Safe{Wallet}.');
   }
   const { hash, request } = await build(o, delegate, info, origin);
-  const mine = read<{ results: DelegateRow[] }>(o.chain,
-    `/api/v2/delegates/?delegate=${delegate.address}&safe=${o.safe}`);
-  const status = delegateStatus(mine.results, Date.now());
-  if (o['dry-run'] || status.kind === 'expiring') {
+  const { results: rows } = read<{ results: DelegateRow[] }>(o.chain,
+    `/api/v2/delegates/?delegate=${delegate.address}`);
+  const status = delegateStatus(rowsForSafe(rows, o.safe), Date.now());
+  if (o['dry-run'] || status.kind !== 'registered') {
     process.stderr.write(`propose: ${status.message}\n`);
   }
   if (o['dry-run']) return console.log(JSON.stringify({ safeTxHash: hash, request }, null, 2));
-  send(o, delegate.address, hash, request);
+  if (status.kind === 'expired' || status.kind === 'not-registered') process.exit(4);
+  send(o, rows, hash, request);
 }
 
 if (isEntry(import.meta.url)) {
