@@ -77,8 +77,8 @@ export function delegateStatus(rows: DelegateRow[], now: number): DelegateStatus
   const register = 'An owner must register it (skills/register-delegate.md).';
   const row = [...rows].sort((a, b) => expiryOf(b) - expiryOf(a))[0];
   if (!row) {
-    const message = `The delegate is not registered for this Safe: the service will refuse the ` +
-      `proposal. ${register}`;
+    const message = 'The delegate is not registered for this Safe, and the service refuses its ' +
+      `proposals. ${register}`;
     return { kind: 'not-registered', message };
   }
   const expiry = expiryOf(row);
