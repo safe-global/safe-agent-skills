@@ -11,6 +11,11 @@ This skill only reads. It cannot sign, propose, confirm, execute or broadcast a 
   from its root (README). The scripts are not in this file.
 - Make every call through `scripts/safe-api.sh <chain> GET <path>`. The chain slug (`sep`,
   `eth`, `gno`, see the README) is part of the URL. There is no default chain.
+- Ask the user for the chain; never assume one. A Safe can have the same address on two chains
+  (common with counterfactual deployment), and a wrong slug then answers HTTP 200 with the
+  owners, nonce and queue of the other Safe, not a 404.
+- Reads need `SAFE_API_KEY` only. They need no delegate and no owner signature: do not run the
+  register-delegate skill to read.
 - Export `SAFE_API_KEY` first. The script prints the response body on stdout and the status on
   stderr. Exit codes are in the README.
 - Use EIP-55 checksummed addresses. The service rejects other forms with HTTP 422.
@@ -55,11 +60,12 @@ scripts/safe-api.sh sep GET "/api/v2/safes/$SAFE/all-transactions/?limit=20"
 
 ## Pending queue
 
-There is no queue endpoint. Use two calls:
+There is no queue endpoint. Use two calls. The second call runs only when the first one gives a
+nonce; after a failed read, `NONCE` is empty or `null`:
 
 ```sh
 NONCE=$(scripts/safe-api.sh sep GET "/api/v1/safes/$SAFE/" | jq -r .nonce)
-scripts/safe-api.sh sep GET \
+[[ $NONCE =~ ^[0-9]+$ ]] && scripts/safe-api.sh sep GET \
   "/api/v2/safes/$SAFE/multisig-transactions/?executed=false&nonce__gte=$NONCE&ordering=nonce"
 ```
 

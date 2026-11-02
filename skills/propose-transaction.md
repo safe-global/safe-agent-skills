@@ -42,13 +42,17 @@ Run it again without `--dry-run` to send it.
   the script stops with exit code 2 and computes no hash.
 - `origin` is the JSON string
   `{"name":"safe-agent-skill/1.0","url":"https://github.com/safe-global/safe-agent-skills","note":"…"}`,
-  at most 200 characters. Safe{Wallet} shows the note to the owners. `--note` is required; the
-  script shortens a long note and ends it with `…`.
+  at most 200 characters. The fixed `name` and `url` take 98 of them, so the note gets at most
+  102 (a `"` or `\` counts twice). Safe{Wallet} shows the note to the owners. `--note` is
+  required; the script shortens a long note and ends it with `…`.
 - Write the note as plain text without `<`, `>` or `&`. Safe{Wallet} sanitises the note: it
   removes tags, and it shows `&` as `&amp;`.
 - `--value` is in wei; `--data` is the calldata (default `0x`).
 - `--delegatecall` sets operation 1 and prints a warning: the target code then runs with the
   Safe's storage and funds. Use it only when the user asks for it and trusts the target.
+- It reads the registrations of the delegate before it sends anything. When the delegate is
+  not registered for this Safe (or for every Safe of an owner), or the registration expired, it
+  prints why and exits 4 with no POST.
 - `--dry-run` sends nothing. On stderr it prints the delegate status: registered until a time,
   expired at a time, or not registered. On stdout it prints the `safeTxHash` and the request that
   it would send (method, path and body). The output holds no key.
@@ -62,9 +66,10 @@ Run it again without `--dry-run` to send it.
 | Exit code | Cause | Next step |
 |---|---|---|
 | 2 | Bad input, an empty note, a bad `--nonce`, an owner key, no key, an unknown Safe version | Fix the input. |
-| 3 | Rate limited, or the monthly quota of the Safe API account is used up: `safe-api.sh` says which. A 429 on the read-back of a stored proposal also exits 3 (see below). | Wait until the printed retry or reset time. |
-| 4 | The delegate is not registered, expired, registered for another Safe, or its delegator is not an owner of the Safe | Register again (register-delegate). |
-| 4 | Another refusal, for example `Tx with nonce=… already executed`. When the delegate lookup after a refusal fails, the script prints the service body and says that the cause is not classified. | Read the message; it quotes the service. |
+| 3 | Rate limited, or the monthly quota of the Safe API account is used up: `safe-api.sh` says which. It does not retry a monthly-quota 429. A 429 on the read-back of a stored proposal also exits 3 (see below). | Wait until the printed retry or reset time. |
+| 4 | The delegate is not registered or its registration expired. The script stops before the POST. | Register again (register-delegate). |
+| 4 | The service refused the proposal: the delegate is registered for another Safe, or its delegator is not an owner of the Safe. | Register again (register-delegate). |
+| 4 | Another refusal, for example `Tx with nonce=… already executed`. | Read the message; it quotes the service. |
 | 5 | Server or network error. When the proposal POST fails this way, the outcome is unknown: the script prints the `safeTxHash` and the command that reads it back. A stored proposal whose read-back fails also exits 5 (see below). | Run that command. 200: it is proposed. 404: propose again. |
 
 When the service stores the proposal but the read-back that follows fails, the script prints

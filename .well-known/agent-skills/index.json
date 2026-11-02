@@ -6,29 +6,29 @@
       "name": "read-safe-state",
       "type": "skill-md",
       "description": "Read a Safe from the Safe Transaction Service (owners, threshold, nonce, version, native and token balances, executed history, the pending queue, and the Safes of an owner). Use it before any proposal and to answer questions about a Safe. Read only.",
-      "url": "../../skills/read-safe-state.md",
-      "digest": "sha256:ad39511f92d0ad6c488f908e5ffff40e42792a06ea69925d1a0d166f0f2042c8"
+      "url": "https://raw.githubusercontent.com/safe-global/safe-agent-skills/main/skills/read-safe-state.md",
+      "digest": "sha256:c81cd568e820c3cf60b6eb35bc1265d4ca8f73ff187b92d7c3bf38021452d587"
     },
     {
       "name": "decode-and-explain",
       "type": "skill-md",
       "description": "Decode Safe transaction calldata into a method and parameters with the Safe Decoder Service, explain its effect in plain words, and estimate safeTxGas. Use it before a proposal and for any queued transaction. Read only; says \"unknown\" when calldata cannot be decoded.",
-      "url": "../../skills/decode-and-explain.md",
-      "digest": "sha256:8cd0c8bca5a9bba99022e369d30504d138f93743aa76488d64f8ada7004db6db"
+      "url": "https://raw.githubusercontent.com/safe-global/safe-agent-skills/main/skills/decode-and-explain.md",
+      "digest": "sha256:591751d181ca8501f27df42d0add3b5b463ca3e3e6846f8bd18b346ee3721505"
     },
     {
       "name": "register-delegate",
       "type": "skill-md",
       "description": "Register a local delegate key for one Safe, so that an agent can propose transactions to that Safe. An owner signs once; the registration expires after 7 days by default, and renewal needs the owner again. The delegate can only propose; it cannot confirm, execute or change the Safe.",
-      "url": "../../skills/register-delegate.md",
-      "digest": "sha256:fe31c04cedeacb582c5e4d147c1108034bd0bb0d8dc5c0d9af59351e0710e890"
+      "url": "https://raw.githubusercontent.com/safe-global/safe-agent-skills/main/skills/register-delegate.md",
+      "digest": "sha256:330a3698888ef580b36f51b7d4de35096d331f0e8049db5f6d651bc3d3f0b479"
     },
     {
       "name": "propose-transaction",
       "type": "skill-md",
       "description": "Propose a Safe transaction as a registered delegate. The proposal appears in the Safe{Wallet} queue with a one-line note; owners confirm and execute it there. Proposal only; the agent cannot sign as an owner, confirm, execute or broadcast.",
-      "url": "../../skills/propose-transaction.md",
-      "digest": "sha256:faaec4b5fb09861f202b7daa07f96a2607e6ceaed7834c6e4b2d40947a985a97"
+      "url": "https://raw.githubusercontent.com/safe-global/safe-agent-skills/main/skills/propose-transaction.md",
+      "digest": "sha256:97258ab7e06837e8c47085778e963d2abfd7b7acc4bbc1081bdc46be7a9c7450"
     }
   ]
 }

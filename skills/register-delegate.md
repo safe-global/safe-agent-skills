@@ -34,6 +34,9 @@ print, paste or commit the key.
 
 ## 2. Get the owner's signature and register
 
+Do step 2 in one sitting, with the owner present: `submit` must run before the signature
+deadline that `typed-data` prints (see below).
+
 With the owner's wallet:
 
 ```sh
@@ -75,8 +78,9 @@ scripts/safe-api.sh sep GET "/api/v2/delegates/?delegate=$DELEGATE&safe=$SAFE"
 ```
 
 The service keeps an expired row until an hourly cleanup. Compare `expiryDate` with the current
-time. To renew, do step 2 again: the same Safe, delegate and owner update the row. `propose.ts`
-prints a notice when less than 24 hours remain.
+time. To renew, do step 2 again: the same Safe, delegate and owner update the row. A delegate
+cannot renew itself, because the service needs a new owner signature. `propose.ts` prints a
+notice when less than 24 hours remain.
 
 ## Refusals (HTTP 400, exit code 4)
 

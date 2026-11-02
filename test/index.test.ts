@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 
 const INDEX = new URL('../.well-known/agent-skills/index.json', import.meta.url);
+const RAW = 'https://raw.githubusercontent.com/safe-global/safe-agent-skills/main/skills/';
 type Entry = { name: string; type: string; description: string; url: string; digest: string };
 
 test('the discovery index matches every skill file, its frontmatter and its digest', () => {
@@ -13,7 +14,8 @@ test('the discovery index matches every skill file, its frontmatter and its dige
     'register-delegate'];
   assert.deepEqual(index.skills.map((s) => s.name).sort(), names);
   for (const skill of index.skills) {
-    const bytes = readFileSync(new URL(skill.url, INDEX));
+    assert.equal(skill.url, `${RAW}${skill.name}.md`, `${skill.name}: url`);
+    const bytes = readFileSync(new URL(`../skills/${skill.name}.md`, import.meta.url));
     const text = bytes.toString('utf8');
     assert.equal(skill.type, 'skill-md');
     assert.equal(skill.digest, `sha256:${createHash('sha256').update(bytes).digest('hex')}`);

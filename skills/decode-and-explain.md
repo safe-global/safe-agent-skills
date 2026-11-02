@@ -35,7 +35,6 @@ The response has `method`, `parameters` (`name`, `type`, `value`, `valueDecoded`
 | `FULL_MATCH` | the ABI of `to` on this chain | Report the method and names. |
 | `PARTIAL_MATCH` | the ABI of the address `to` on another chain | Say that the ABI is from another chain. |
 | `ONLY_FUNCTION_MATCH` | a function of another contract with the same selector | `to` has no known ABI (for example, it is not verified). Say that the names can be wrong. |
-| `NO_MATCH` | nothing | Say "unknown". |
 
 - HTTP 404 with `{"detail":"Cannot find function selector to decode data"}` (exit code 4)
   means the selector is unknown. Say "unknown". Never guess a method from the selector.
@@ -55,6 +54,9 @@ and call the decoder only for raw calldata.
   and for a token call the token, the recipient and the amount in token units.
 - `operation` 1 is a delegatecall: the target code runs with the Safe's storage and funds. Say
   so in plain words, and name the target.
+- A top-level delegatecall is a red flag unless the method is `multiSend` and `to` is a Safe
+  MultiSend contract. Any other target can change the owners or move every asset. Say this
+  first, before the rest of the explanation.
 - Say when a call changes the Safe itself: owners, threshold, modules, guard or fallback
   handler.
 - Keep the facts from the decoder apart from your reading of them.
