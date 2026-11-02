@@ -8,6 +8,7 @@ readonly MAX_ATTEMPTS=3 MAX_RETRY_AFTER=30
 readonly TOKEN_RE='^[A-Za-z0-9._~+/=-]+$'
 readonly PATH_RE='^(/decoder)?/api/v[0-9]+/[^[:space:][:cntrl:]]*$'
 readonly DOT_SEGMENT_RE='/(\.|%2[eE]){1,2}/'
+readonly ENCODED_SEPARATOR_RE='%2[fF]|%5[cC]|[\]'
 
 note() { printf 'safe-api: %s\n' "$*" >&2; }
 die() { note "$*"; exit "$EX_USAGE"; }
@@ -49,6 +50,9 @@ case $method in GET | POST | PUT | PATCH | DELETE) ;; *) die "invalid method: $m
 [[ $path =~ $PATH_RE ]] || die "invalid path: /api/vN/... with no spaces or control characters"
 if [[ "${path%%[?#]*}/" =~ $DOT_SEGMENT_RE ]]; then
   die "invalid path: a . or .. segment (also %2e) would send the request to another endpoint"
+fi
+if [[ "${path%%[?#]*}" =~ $ENCODED_SEPARATOR_RE ]]; then
+  die "invalid path: an encoded slash or a backslash (%2f, %5c) could hide a . or .. segment"
 fi
 [ "$method" != GET ] || [ -z "$body" ] || die "GET takes no body"
 if [ "$each" = 1 ]; then
@@ -92,6 +96,9 @@ header() {
     END { print v }' "$tmp/headers"
 }
 
+# The gateway's 429 body names the plan's monthly quota (PLA-2209 wording and the older one).
+monthly_quota() { [ -n "$key" ] && grep -qi 'monthly quota' "$tmp/body"; }
+
 retry_after() {
   local v
   v=$(header retry-after)
@@ -126,7 +133,7 @@ send() {
 retryable() {
   if [ "$curl_rc" != 0 ]; then [ "$method" = GET ] && [ "$curl_rc" != 3 ]; return; fi
   case $status in
-    429) return 0 ;;
+    429) ! monthly_quota ;;
     502 | 503 | 504) [ "$method" = GET ] ;;
     *) return 1 ;;
   esac
@@ -166,7 +173,7 @@ limit_lines() {
 }
 
 quota_message() {
-  if [ -n "$key" ] && grep -q 'Monthly quota exceeded' "$tmp/body"; then
+  if monthly_quota; then
     note "429 Too Many Requests after $attempts attempt(s): the monthly quota of the Safe API" \
       "account is used up. The response body is on stdout."
   else
@@ -189,10 +196,12 @@ transport_failure() {
 
 outcome() {
   if [ "$curl_rc" != 0 ]; then transport_failure "$1"; return; fi
-  local left limit
+  local left limit warning
   left=$(header x-ratelimit-remaining)
   limit=$(header x-ratelimit-limit)
   note "$chain $method $1 -> $status${left:+ (rate limit: $left of $limit left)}"
+  warning=$(header x-ratelimit-warning)
+  if [ -n "$warning" ]; then note "X-RateLimit-Warning: $warning"; fi
   case $status in
     2??) return 0 ;;
     429) quota_message; return "$EX_QUOTA" ;;

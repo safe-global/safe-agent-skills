@@ -94,7 +94,8 @@ async function run(args: string[], env = hosted(), input = ''): Promise<Result> 
 const gap = (i: number) => seen[i].at - seen[i - 1].at;
 
 test('sends the exact User-Agent and the Bearer key to the hosted URL', async () => {
-  const headers = { 'x-ratelimit-remaining': '4999', 'x-ratelimit-limit': '5000' };
+  const headers = { 'x-ratelimit-remaining': '4999', 'x-ratelimit-limit': '5000',
+    'x-ratelimit-warning': '82% of the monthly quota is used' };
   replies = [{ status: 200, headers, body: '{"version":"6.13.0"}' }];
   const r = await run(['sep', 'GET', '/api/v1/about/?probe=[1]']);
   assert.equal(r.code, 0);
@@ -104,6 +105,7 @@ test('sends the exact User-Agent and the Bearer key to the hosted URL', async ()
   assert.equal(seen[0].headers.authorization, `Bearer ${KEY}`);
   const line = /sep GET \/api\/v1\/about\/\?probe=\[1\] -> 200 \(rate limit: 4999 of 5000 left\)/;
   assert.match(r.stderr, line);
+  assert.ok(r.stderr.includes('safe-api: X-RateLimit-Warning: 82% of the monthly quota is used\n'));
 });
 
 test('the key stays off the process list while curl runs', async () => {
@@ -143,7 +145,8 @@ test('a malformed SAFE_API_KEY is refused before any request', async () => {
 test('a dot segment, a control character or a bad base URL is refused before any request',
   async () => {
     const paths = ['/api/v1/../../x/', '/api/v1/%2E%2e/x/', '/api/v1/./about/',
-      '/api/v1/about/..?a=1', '/api/v1/about/\x01'];
+      '/api/v1/about/..?a=1', '/api/v1/about/\x01', '/api/v1/about/..%2f..%2fx/',
+      '/api/v1/about/%2e%2e%2Fx/', '/api/v1/about/..%5c..%5Cx/', '/api/v1/about/..\\x/'];
     for (const path of paths) {
       const r = await run(['sep', 'GET', path]);
       assert.equal(r.code, 2, path);
@@ -159,6 +162,7 @@ test('a dot segment, a control character or a bad base URL is refused before any
     }
     assert.equal(seen.length, 0);
     assert.equal((await run(['sep', 'GET', '/api/v1/about/?ordering=a..b'])).code, 0);
+    assert.equal((await run(['sep', 'GET', '/api/v1/about/?next=a%2Fb'])).code, 0);
   });
 
 test('SAFE_TX_SERVICE_URL sets the base URL and makes the key optional', async () => {
@@ -192,26 +196,44 @@ test('429 with Retry-After is retried after the delay, then succeeds', async () 
   assert.ok(gap(1) >= 1000, `retried after ${gap(1)} ms`);
 });
 
-test('a persistent 429 stops after 3 attempts with the quota message', async () => {
+// The gateway's bodies since PLA-2209 (2026-10-26), and the older quota body.
+const MONTHLY = '{"error_msg":"The monthly quota of 50000 requests on the Builder plan is used. ' +
+  'It resets on 2026-12-01."}';
+const PER_SECOND = '{"error_msg":"This account is limited to 5 requests per second on the ' +
+  'Builder plan. Retry after 1 second."}';
+
+test('a monthly-quota 429 is not retried and names the quota', async () => {
   const headers = { 'retry-after': '0', 'x-ratelimit-reset': '3600' };
-  const quota = { status: 429, headers, body: '{"detail":"Monthly quota exceeded."}' };
-  replies = [quota, quota, quota, { status: 201 }];
+  for (const body of [MONTHLY, '{"detail":"Monthly quota exceeded."}']) {
+    replies = [{ status: 429, headers, body }, { status: 201 }];
+    seen = [];
+    const r = await run(['sep', 'POST', ESTIMATE, BODY]);
+    assert.equal(r.code, 3, body);
+    assert.equal(seen.length, 1, body);
+    assert.equal(r.stdout, body);
+    assert.match(r.stderr, /after 1 attempt\(s\): the monthly quota of the Safe API account/);
+    assert.match(r.stderr, /rate limit resets in 3600s \(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ\)/);
+    assert.match(r.stderr, /Still works: Safe\{Wallet\}/);
+  }
+});
+
+test('a per-second 429 is retried and stops after 3 attempts as rate limited', async () => {
+  const limited = { status: 429, headers: { 'retry-after': '0' }, body: PER_SECOND };
+  replies = [limited, limited, limited, { status: 201 }];
   const r = await run(['sep', 'POST', ESTIMATE, BODY]);
   assert.equal(r.code, 3);
   assert.equal(seen.length, 3);
-  assert.equal(r.stdout, quota.body);
-  assert.match(r.stderr, /after 3 attempt\(s\): the monthly quota of the Safe API account/);
-  assert.match(r.stderr, /rate limit resets in 3600s \(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ\)/);
-  assert.match(r.stderr, /Still works: Safe\{Wallet\}/);
+  assert.match(r.stderr, /after 3 attempt\(s\): rate limited/);
+  assert.doesNotMatch(r.stderr, /Safe API account/);
 });
 
 test('a 429 without the monthly-quota body says rate limited and prints the limit headers',
   async () => {
     const headers = { 'retry-after': '120', 'x-ratelimit-limit': '5000',
       'x-ratelimit-remaining': '0', 'x-ratelimit-reset': '1200' };
-    replies = [{ status: 429, headers, body: '{"message":"API rate limit exceeded"}' }];
+    replies = [{ status: 429, headers, body: PER_SECOND }];
     const hostedRun = await run(['sep', 'GET', '/api/v1/about/']);
-    replies = [{ status: 429, headers, body: '{"detail":"Monthly quota exceeded."}' }];
+    replies = [{ status: 429, headers, body: MONTHLY }];
     const selfHosted = await run(['gno', 'GET', '/api/v1/about/'], local());
     const lines = ['Retry-After: 120', 'X-RateLimit-Limit: 5000', 'X-RateLimit-Remaining: 0',
       'X-RateLimit-Reset: 1200'];
