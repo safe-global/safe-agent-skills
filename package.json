@@ -1,0 +1,23 @@
+{
+  "name": "safe-agent-skills",
+  "version": "1.0.0",
+  "description": "Agent skills to read Safe state and propose transactions through the Safe Transaction Service API",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "lint": "shellcheck scripts/*.sh"
+  },
+  "dependencies": {
+    "viem": "2.57.13"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "typescript": "6.0.3"
+  }
+}
