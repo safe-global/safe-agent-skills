@@ -48,8 +48,8 @@ ships as a `.tar.gz` archive with its file as `SKILL.md`, the scripts, `package.
 archives of the GitHub release `v<version>` (`version` from `package.json`), so the index stays
 valid when it is hosted alone. `node scripts/pack.ts` builds the same bytes on every run into
 `dist/` and prints the digests; `npm test` checks them against the index. After you change a
-shipped file, bump `version`, update the URLs and digests, and publish a release with that tag:
-the release workflow builds the archives and uploads them.
+shipped file, bump `version`, update the URLs and digests, and push the tag: the release workflow
+builds the archives into a draft release, which a maintainer then publishes.
 
 ## Calling the API
 

@@ -1,8 +1,8 @@
 name: Release
 
 on:
-  release:
-    types: [published]
+  push:
+    tags: ['v*']
 
 permissions:
   contents: write
@@ -16,12 +16,12 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: '24'
+          node-version: '24.0.0'
       - run: grep -q "/releases/download/$TAG/" .well-known/agent-skills/index.json
         env:
-          TAG: ${{ github.event.release.tag_name }}
+          TAG: ${{ github.ref_name }}
       - run: node --test test/index.test.ts
-      - run: node scripts/pack.ts && gh release upload "$TAG" dist/*.tar.gz
+      - run: node scripts/pack.ts && gh release create "$TAG" --draft --verify-tag dist/*.tar.gz
         env:
-          TAG: ${{ github.event.release.tag_name }}
+          TAG: ${{ github.ref_name }}
           GH_TOKEN: ${{ github.token }}
