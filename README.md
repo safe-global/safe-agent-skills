@@ -42,9 +42,14 @@ messages.
 
 [`.well-known/agent-skills/index.json`](.well-known/agent-skills/index.json) lists the skills in
 the [Agent Skills discovery](https://github.com/cloudflare/agent-skills-discovery-rfc) format
-(v0.2.0, the format of `https://agents.ramp.com/.well-known/agent-skills/index.json`). Its `url`
-values are absolute links to the files on the `main` branch, so the index stays valid when it is
-hosted alone. After you change a skill file, update its `digest` there; `npm test` checks it.
+(v0.2.0, the format of `https://agents.ramp.com/.well-known/agent-skills/index.json`). Each skill
+ships as a `.tar.gz` archive with its file as `SKILL.md`, the scripts, `package.json`,
+`package-lock.json`, this README and the license. The `url` values are absolute links to the
+archives of the GitHub release `v<version>` (`version` from `package.json`), so the index stays
+valid when it is hosted alone. `node scripts/pack.ts` builds the same bytes on every run into
+`dist/` and prints the digests; `npm test` checks them against the index. After you change a
+shipped file, bump `version`, update the URLs and digests, and push the tag: the release workflow
+builds the archives into a draft release, which a maintainer then publishes.
 
 ## Calling the API
 

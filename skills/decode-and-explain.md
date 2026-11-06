@@ -7,8 +7,7 @@ description: Decode Safe transaction calldata into a method and parameters with 
 
 This skill only reads. It cannot sign, propose, confirm, execute or broadcast a transaction.
 
-- Install first: clone https://github.com/safe-global/safe-agent-skills and run the commands
-  from its root (README). The scripts are not in this file.
+- The scripts and the README ship in this skill package. Run the commands from its root.
 - Make every call through `scripts/safe-api.sh`. Export `SAFE_API_KEY` first. Exit codes are
   in the README.
 - For the Transaction Service, the chain slug (`sep`, `eth`, `gno`, see the README) is part of

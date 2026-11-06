@@ -9,8 +9,8 @@ The agent proposes; the owners decide. `propose.ts` signs the transaction hash w
 key. The service stores that signature as the proposer's, not as a confirmation: the proposal
 starts with 0 confirmations. Owners confirm and execute it in Safe{Wallet}.
 
-- Install first: clone https://github.com/safe-global/safe-agent-skills, run `npm ci`, and run
-  the commands from its root (README). The scripts are not in this file.
+- The scripts and the README ship in this skill package. Run `npm ci --omit=dev --ignore-scripts`
+  and the commands from its root.
 - The script makes every API call through `scripts/safe-api.sh`. The chain slug (`sep`, `eth`,
   `gno`, see the README) is part of the URL. Export `SAFE_API_KEY` first.
 - You need a delegate registered for this Safe (the register-delegate skill). The key comes from
