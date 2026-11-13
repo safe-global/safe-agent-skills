@@ -9,8 +9,8 @@ A delegate is an address that the Transaction Service accepts as a proposer for 
 cannot sign as an owner, confirm, execute or broadcast. A leaked delegate key lets someone post
 spam proposals; no owner has to approve them.
 
-- The scripts and the README ship in this skill package. Run `npm ci --omit=dev --ignore-scripts`
-  and the commands from its root.
+- The scripts and the README ship in this skill package. Run
+  `npm ci --omit=dev --omit=optional --ignore-scripts` and the commands from its root.
 - The scripts make every API call through `scripts/safe-api.sh`. The chain slug (`sep`, `eth`,
   `gno`, see the README) is part of the URL. Export `SAFE_API_KEY` first.
 - The script always registers for one Safe. Never register a delegate without a Safe: that

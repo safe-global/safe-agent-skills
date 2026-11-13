@@ -21,14 +21,14 @@
       "type": "archive",
       "description": "Register a local delegate key for one Safe, so that an agent can propose transactions to that Safe. An owner signs once; the registration expires after 7 days by default, and renewal needs the owner again. The delegate can only propose; it cannot confirm, execute or change the Safe.",
       "url": "https://github.com/safe-global/safe-agent-skills/releases/download/v1.0.0/register-delegate.tar.gz",
-      "digest": "sha256:2a8cc3bcc713c54a3e2109b95bdee314c9a4e1f927cdf3d4169f33d21b7b2c11"
+      "digest": "sha256:cd0f52d3947fc56d400739af542fbdd3915adc01f2b85846cc6cd6a5fb320f76"
     },
     {
       "name": "propose-transaction",
       "type": "archive",
       "description": "Propose a Safe transaction as a registered delegate. The proposal appears in the Safe{Wallet} queue with a one-line note; owners confirm and execute it there. Proposal only; the agent cannot sign as an owner, confirm, execute or broadcast.",
       "url": "https://github.com/safe-global/safe-agent-skills/releases/download/v1.0.0/propose-transaction.tar.gz",
-      "digest": "sha256:363bd29e452b198088233954446974da3eeb3ac0c5e8b9a6b6f60c552198312e"
+      "digest": "sha256:9970e8d7c986dd4bd42aeb9b83908fecd8fb2dc222debbba03b97f1aa56d85d1"
     }
   ]
 }
