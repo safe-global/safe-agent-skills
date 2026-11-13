@@ -1,0 +1,31 @@
+version: 2
+updates:
+  - package-ecosystem: 'github-actions'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+    open-pull-requests-limit: 10
+    cooldown:
+      default-days: 7
+
+  - package-ecosystem: 'npm'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+    open-pull-requests-limit: 10
+    # Same 7-day cooldown as for actions; majors wait 30 days and get their own PRs.
+    cooldown:
+      default-days: 7
+      semver-major-days: 30
+    ignore:
+      # @types/node tracks the Node runtime in .nvmrc; bump its major together with Node.
+      - dependency-name: '@types/node'
+        update-types: ['version-update:semver-major']
+    groups:
+      # One PR per week: every npm change also moves the archive digests in
+      # .well-known/agent-skills/index.json, which a maintainer regenerates once per PR.
+      npm-dependencies:
+        patterns: ['*']
+        update-types: ['minor', 'patch']
