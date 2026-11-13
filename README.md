@@ -13,7 +13,7 @@ An agent reads Safe state, explains calldata and proposes transactions.
 
 ## Setup
 
-1. Install Node.js 24.0.0 or later (tested on 24.0.0 and 26.12.1), bash, curl and jq. The specs
+1. Install Node.js 24 or later (CI runs the latest 24.x and 26.x), bash, curl and jq. The specs
    (`npm test`) also need openssl.
 2. Run `npm ci` in this directory.
 3. Create an API key in the [Safe developer dashboard](https://developer.safe.global) and
