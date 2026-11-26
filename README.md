@@ -38,7 +38,7 @@ messages.
 | [read-safe-state](skills/read-safe-state.md) | Read owners, threshold, nonce, balances, history, the pending queue and the Safes of an owner. |
 | [decode-and-explain](skills/decode-and-explain.md) | Decode calldata, explain its effect and estimate `safeTxGas`. |
 | [register-delegate](skills/register-delegate.md) | Create a local delegate key and have an owner register it for one Safe. |
-| [propose-transaction](skills/propose-transaction.md) | Propose a transaction as the delegate; owners confirm and execute it in Safe{Wallet}. |
+| [propose-transaction](skills/propose-transaction.md) | Propose a transaction as the delegate, with a summary that lists batch calls, approvals and risks (`--dry-run` proposes nothing); owners confirm and execute it in Safe{Wallet}. |
 
 [`.well-known/agent-skills/index.json`](.well-known/agent-skills/index.json) lists the skills in
 the [Agent Skills discovery](https://github.com/cloudflare/agent-skills-discovery-rfc) format
@@ -126,7 +126,8 @@ has the header `X-RateLimit-Warning`, the script prints it on stderr, also for a
 - The gateway log field `http_origin` is the browser `Origin` request header.
 - The transaction `origin` is a field in the body of a proposed transaction. Safe{Wallet} reads
   it as JSON: it shows `note` to the owners, and it shows `url` as the Safe App only when the URL
-  matches a registered Safe App.
+  matches a registered Safe App. The field is public: anyone who knows the Safe address can read
+  it through the API, also after the transaction is executed.
 
 ## License
 

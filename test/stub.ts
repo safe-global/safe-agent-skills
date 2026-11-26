@@ -69,7 +69,9 @@ const server = createServer((req, res) => {
   let body = '';
   req.on('data', (chunk: Buffer) => (body += chunk));
   req.on('end', () => {
-    const { method = '', url = '' } = req;
+    const { method = '' } = req;
+    // A service URL with a query (?token=…) puts that query before every path; drop it.
+    const url = (req.url ?? '').replace(/^\/\?[^/]*/, '');
     const request = { method, url, body };
     seen.push(request);
     const reply = replyTo(request);
