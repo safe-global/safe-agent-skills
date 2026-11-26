@@ -1,13 +1,12 @@
-import { spawnSync } from 'node:child_process';
-import { mkdirSync, realpathSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
-import { getAddress, hashTypedData, isAddress, recoverAddress } from 'viem';
+import { hashTypedData, recoverAddress } from 'viem';
 import type { Address, Hex } from 'viem';
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
+import { addressArg, api, chainIdOf, isEntry } from './lib.ts';
+import type { ApiResult } from './lib.ts';
 
-const SAFE_API = fileURLToPath(new URL('./safe-api.sh', import.meta.url));
 const HOUR = 3600;
 const KEY_RE = /^0x[0-9a-fA-F]{64}$/;
 const USAGE = `usage:
@@ -16,48 +15,6 @@ const USAGE = `usage:
   sign-delegate.ts submit --chain <slug> --safe <address> --delegate <address>
       (--owner-key-env <VAR> | --delegator <address> --signature 0x...)
       [--label <text>] [--expires-in <seconds, default 604800 = 7 days>]`;
-
-export type ApiResult = { exit: number; body: unknown };
-
-/** True when node runs this module as its script; import.meta.main is missing before 24.2. */
-export function isEntry(moduleUrl: string): boolean {
-  const script = process.argv[1];
-  try {
-    return script !== undefined && realpathSync(script) === realpathSync(fileURLToPath(moduleUrl));
-  } catch {
-    return false;
-  }
-}
-
-const MIN_GAP_MS = 200;
-let lastRunEnd = 0;
-
-/**
- * Calls scripts/safe-api.sh; its status lines go to stderr, the parsed body comes back.
- * Runs are serial and start at least 200 ms after the previous one ends (5 requests/s).
- */
-export function api(chain: string, method: string, path: string, body?: unknown): ApiResult {
-  const args = [SAFE_API, chain, method, path, ...(body === undefined ? [] : ['-'])];
-  const input = body === undefined ? '' : JSON.stringify(body);
-  const stdio: ['pipe', 'pipe', 'inherit'] = ['pipe', 'pipe', 'inherit'];
-  const wait = lastRunEnd + MIN_GAP_MS - Date.now();
-  if (wait > 0) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, wait);
-  const r = spawnSync('bash', args, { input, encoding: 'utf8', stdio });
-  lastRunEnd = Date.now();
-  if (r.error) throw r.error;
-  try {
-    return { exit: r.status ?? 5, body: r.stdout ? JSON.parse(r.stdout) : null };
-  } catch {
-    return { exit: r.status ?? 5, body: r.stdout };
-  }
-}
-
-export function chainIdOf(chain: string): number {
-  const r = api(chain, 'GET', '/api/v1/about/ethereum-rpc/');
-  const id = (r.body as { chain_id?: unknown } | null)?.chain_id;
-  if (r.exit !== 0 || typeof id !== 'number') process.exit(r.exit || 5);
-  return id;
-}
 
 export function delegateTypedData(delegate: Address, totp: number, chainId: number) {
   return {
@@ -124,14 +81,6 @@ function newKey(out: string | undefined) {
     die(`cannot create ${out}: ${message}`);
   }
   console.log(privateKeyToAccount(key).address);
-}
-
-/** A strict address argument: getAddress alone re-checksums a mixed-case typo silently. */
-export function addressArg(option: string, value: string): Address {
-  if (!isAddress(value)) {
-    throw new Error(`--${option}: ${value} is not a valid address (wrong EIP-55 checksum?)`);
-  }
-  return getAddress(value);
 }
 
 /** Wallets may return v as 0 or 1; the service reads only 27 or 28 as an owner signature. */

@@ -1,10 +1,9 @@
-import { readFileSync, statSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { getAddress, hashTypedData, zeroAddress } from 'viem';
 import type { Address, Hex } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import type { PrivateKeyAccount } from 'viem/accounts';
-import { addressArg, api, chainIdOf, isEntry } from './sign-delegate.ts';
+import { addressArg, api, chainIdOf, isEntry, loadKey } from './lib.ts';
 
 const NAME = 'safe-agent-skill/1.0';
 const URL_ = 'https://github.com/safe-global/safe-agent-skills';
@@ -127,16 +126,6 @@ export function explainRefusal(
 function die(message: string, code = 2): never {
   process.stderr.write(`propose: ${message}\n`);
   process.exit(code);
-}
-
-function loadKey(file: string | undefined): Hex {
-  if (file && (statSync(file).mode & 0o077) !== 0) die(`${file} is readable by others: chmod 600`);
-  const raw = file ? readFileSync(file, 'utf8') : process.env.SAFE_DELEGATE_PRIVATE_KEY ?? '';
-  const key = raw.trim();
-  if (!/^0x[0-9a-fA-F]{64}$/.test(key)) {
-    die('set SAFE_DELEGATE_PRIVATE_KEY or pass --key-file <path> (from sign-delegate.ts new-key)');
-  }
-  return key as Hex;
 }
 
 type SafeInfo = { nonce: string; owners: string[]; version: string | null };

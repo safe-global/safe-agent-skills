@@ -67,7 +67,7 @@ test('api() starts each safe-api.sh run at least 200 ms after the previous one',
   await once(server, 'listening');
   const { port } = server.address() as AddressInfo;
   // api() blocks its process (spawnSync), so it runs in a child while this process serves.
-  const module = new URL('../scripts/sign-delegate.ts', import.meta.url).href;
+  const module = new URL('../scripts/lib.ts', import.meta.url).href;
   const code = `import { api } from ${JSON.stringify(module)};\n` +
     "for (let i = 0; i < 3; i++) api('local', 'GET', '/api/v1/about/');";
   const env = { PATH: process.env.PATH ?? '', SAFE_TX_SERVICE_URL: `http://127.0.0.1:${port}` };
