@@ -51,6 +51,12 @@ test('the discovery index matches every skill archive, its frontmatter and its d
       assert.ok(!path.startsWith('/') && !path.split('/').includes('..'), `${skill.name}: ${path}`);
     }
     assert.deepEqual(files.get('SKILL.md'), read(`skills/${skill.name}.md`));
+    for (const [path, body] of files) {
+      if (!/^scripts\/[\w.-]+\.ts$/.test(path)) continue;
+      for (const [, name] of body.toString().matchAll(/from '\.\/([\w.-]+\.ts)'/g)) {
+        assert.ok(files.has(`scripts/${name}`), `${skill.name}: ${path} imports ${name}`);
+      }
+    }
     for (const script of files.get('SKILL.md')!.toString().match(/scripts\/[\w.-]+/g)!) {
       assert.ok(files.has(script), `${skill.name}: ${script} missing`);
     }

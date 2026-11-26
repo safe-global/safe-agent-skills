@@ -5,8 +5,8 @@ import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
-const SHIPPED = ['LICENSE', 'README.md', 'package-lock.json', 'package.json', 'scripts/propose.ts',
-  'scripts/safe-api.sh', 'scripts/sign-delegate.ts'];
+const SHIPPED = ['LICENSE', 'README.md', 'package-lock.json', 'package.json', 'scripts/lib.ts',
+  'scripts/propose.ts', 'scripts/safe-api.sh', 'scripts/sign-delegate.ts'];
 const MTIME = Date.UTC(2026, 0, 1) / 1000;
 const OUT = process.argv[2] ?? join(ROOT, 'dist');
 
